@@ -8,7 +8,7 @@ package bankingsystem;
 
 import java.net.*;
 import java.io.*;
-import java.util.Scanner;
+import java.util.*;
 /**
  *
  * @author Quan Hoang
@@ -21,8 +21,10 @@ public class Client {
              * Initialize connection
              * Send hello message
              */
-            socket = new DatagramSocket();        
-            byte[] m = "hello".getBytes();
+            socket = new DatagramSocket();    
+            Date date = new Date();
+            String init = "hello;" + date.getTime();
+            byte[] m = init.getBytes();
             InetAddress host;
             if (args.length < 1)
                 host = InetAddress.getByName("localhost");
@@ -55,7 +57,8 @@ public class Client {
                         monitoring = false;
                     System.out.println(new String(reply.getData()));
                     if(!monitoring){
-                        String selection = scanner.nextLine();
+                        Date d = new Date();
+                        String selection = scanner.nextLine() + ";" + d.getTime();
                         request = new DatagramPacket(selection.getBytes(),selection.length(),host,serverPort);
                         socket.send(request);
                     }

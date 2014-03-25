@@ -19,7 +19,10 @@ public class BankingSystem {
     public static void main(String[] args) {
         // TODO code application logic here
         String[] arguments = new String[1];
+        String[] argss = new String[1];
+        argss[0] = "1";
         arguments[0] = "localhost";
+        Server s = new Server();s.main(new String[0]);
         Client c = new Client();c.main(arguments);
     }
     
