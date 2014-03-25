@@ -58,6 +58,8 @@ public class Client {
                     }
                 }catch(SocketTimeoutException e){
                     System.out.println(e);
+                    System.out.println("Request resent!");
+                    socket.send(request);
                 }
             }
         }catch(ConnectException e){

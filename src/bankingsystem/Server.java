@@ -124,8 +124,14 @@ public class Server {
                                         clients.remove(request.getAddress());
                                         break;
                                 }
-                            }catch(Exception e){
+                            }
+                            catch(NumberFormatException e) {
                                 message = "Error: " + e.getMessage();
+                                finish_trans = true;
+                            }
+                            catch(Exception e){
+                                message = "Error: " + e.getMessage();
+                                finish_trans = true;
                             }                                
                             break;
                         case 1:
@@ -276,7 +282,12 @@ public class Server {
                     clients.put(request.getAddress(), 0);
                 }
                 DatagramPacket reply = new DatagramPacket(message.getBytes(),message.length(),request.getAddress(),request.getPort());
-                socket.send(reply);
+                int ran=(int)(Math.random()*10);
+                if (ran >2 ) {
+                    socket.send(reply);
+                } else {
+                    System.out.println("Reply lost!");
+                }
             }
         }catch(SocketException e){
             System.out.println("Error: " + e.toString());

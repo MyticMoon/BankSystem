@@ -39,6 +39,7 @@ public class BankAccount{
     
     public String get_name(){
         return name;
+        
     }
     
     public String get_password(){
