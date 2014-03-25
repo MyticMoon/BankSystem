@@ -36,10 +36,13 @@ public class Client {
             
             Scanner scanner = new Scanner(System.in);
             
-            //recieve reply
-            socket.setSoTimeout(1000);
+            //recieve reply     
             boolean monitoring = false;
             while(true){
+                if(monitoring)
+                    socket.setSoTimeout(0);
+                else
+                    socket.setSoTimeout(1000);
                 byte[] buffer = new byte[1000];
                 DatagramPacket reply = new DatagramPacket(buffer,buffer.length);
                 try{ // reply message arrive
@@ -48,7 +51,7 @@ public class Client {
                         return;
                     if((new String(reply.getData(),reply.getOffset(),reply.getLength())).equals("Start monitoring"))
                         monitoring = true;
-                    else
+                    if((new String(reply.getData(),reply.getOffset(),reply.getLength())).equals("Finish monitoring"))
                         monitoring = false;
                     System.out.println(new String(reply.getData()));
                     if(!monitoring){
