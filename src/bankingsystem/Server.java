@@ -6,6 +6,9 @@
 
 package bankingsystem;
 
+import javax.swing.Timer;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.net.*;
 import java.io.*;
 import java.util.*;
@@ -30,6 +33,40 @@ public class Server {
     private static DatagramSocket socket;
     private static HashMap<Identity,Date> monitorings;
     private static boolean at_most_one;
+    
+    private static class GeneralTimer{
+        private Timer timer;
+        private InetAddress add;
+        
+        public GeneralTimer(int duration, Identity monitor){
+            final Identity tmpMonitor = monitor;
+            timer = new Timer(duration*1000, new ActionListener() 
+            { 
+                @Override
+                public void actionPerformed(ActionEvent e) 
+                {   
+                    System.out.println("action peformed");
+                    if(monitorings.containsKey(tmpMonitor)){
+                        monitorings.remove(tmpMonitor);
+                        System.out.println("Deregister monitor");
+                        System.out.println(monitorings.size());
+                        try{
+                            socket.send(new DatagramPacket("Finish monitoring".getBytes(), "Finish monitoring".length(),tmpMonitor.get_address(), tmpMonitor.get_port()));
+                        }
+                        catch(Exception ex){
+                            System.out.println(ex);
+                        }
+                    }
+                }
+            });
+            timer.setRepeats(false);
+        }
+        
+        public void startTimer(){
+            timer.start();
+            System.out.println(monitorings.size());
+        }
+    }
     
     private static class Identity{
         private InetAddress address;
@@ -489,8 +526,15 @@ public class Server {
             monitorings.put(monitor, end_date);
         }
         
+        GeneralTimer gTimer = new GeneralTimer(duration, monitor);
+        gTimer.startTimer();
+        //tiempo.setRepeats(false);
+        //tiempo.start();
+        
         return "Start monitoring";
     }
+    
+    
     
     private static void inform_monitors(String message){
         Iterator<Identity> iterator = monitorings.keySet().iterator();
