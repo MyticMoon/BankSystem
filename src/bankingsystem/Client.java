@@ -27,7 +27,7 @@ public class Client {
             byte[] m = init.getBytes();
             InetAddress host;
             if (args.length < 1)
-                host = InetAddress.getByName("localhost");
+                host = InetAddress.getByName("172.21.144.97");
             else
                 host = InetAddress.getByName(args[0]);
             int serverPort = 2222;
