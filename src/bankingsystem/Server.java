@@ -27,15 +27,18 @@ public class Server {
                             + "\n6. Check recent transactions\n" + "\t" + transactions()
                             + "\n7. Monitor all account\n" + "\t" + monitor()
                             + "\n8. Close connection";
-    private static HashMap<InetAddress,Long> clients;
-    private static HashMap<InetAddress,String> last_mes;
+    private static HashMap<Identity,Long> clients;
+    private static HashMap<Identity,String> last_mes;
     private static HashMap<Integer,BankAccount> bank;
     private static DatagramSocket socket;
     private static HashMap<Identity,Date> monitorings;
+    private static HashMap<Identity,GeneralTimer> monitor_timers;
     private static boolean at_most_one;
+    private static boolean same_endian;
     
     private static class GeneralTimer{
         private Timer timer;
+        private Timer ackTimer;
         private InetAddress add;
         
         public GeneralTimer(int duration, Identity monitor){
@@ -50,21 +53,33 @@ public class Server {
                         monitorings.remove(tmpMonitor);
                         System.out.println("Deregister monitor");
                         System.out.println(monitorings.size());
-                        try{
-                            socket.send(new DatagramPacket("Finish monitoring".getBytes(), "Finish monitoring".length(),tmpMonitor.get_address(), tmpMonitor.get_port()));
-                        }
-                        catch(Exception ex){
-                            System.out.println(ex);
-                        }
+                        send_rep(tmpMonitor,"Finish monitoring");
+                        startAck();
                     }
                 }
             });
+            ackTimer = new Timer(1000,new ActionListener() {
+                @Override
+                public void actionPerformed(ActionEvent ea) {
+                        send_rep(tmpMonitor,"Finish monitoring");
+                }
+            });
             timer.setRepeats(false);
+            ackTimer.setRepeats(true);
         }
         
         public void startTimer(){
             timer.start();
             System.out.println(monitorings.size());
+        }
+        
+        public void startAck(){
+            System.out.println("resent finish monitoring");
+            ackTimer.start();           
+        }
+        
+        public void endAck(){
+            ackTimer.stop();            
         }
     }
     
@@ -84,6 +99,48 @@ public class Server {
         public int get_port(){
             return port;
         }
+        
+        @Override
+        public int hashCode() {
+            final int prime = 31;
+            int result = 1;
+            result = prime * result
+                         + ((address == null) ? 0 : address.hashCode());
+            result = prime * result + port;
+            return result;
+        }
+
+
+
+        @Override
+        public boolean equals(Object obj) {
+            if (obj == null)
+                return false;
+            if (obj == this)
+                return true;
+            if (!(obj instanceof Identity))
+                return false;
+
+            Identity rhs = (Identity) obj;
+            return rhs.get_address().equals(address) && rhs.get_port() == port;
+        }
+    }
+    
+    public static boolean send_rep(Identity iden,String message){
+        int ran=(int)(Math.random()*100);
+        if (ran > 15)
+            try{
+                socket.send(new DatagramPacket(message.getBytes(), message.length(),iden.get_address(), iden.get_port()));
+                return true;
+            }
+            catch(Exception ex){
+                System.out.println(ex);
+                return false;
+            }
+        else {
+            System.out.println("Reply lost");
+            return false;
+        }
     }
     
     public static void main(String args[]){
@@ -92,6 +149,9 @@ public class Server {
         clients = new HashMap<>();
         monitorings = new HashMap<>();
         last_mes = new HashMap<>();
+        monitor_timers = new HashMap<>();
+        same_endian = false;
+        
         if (args.length < 1){
             at_most_one = true;
         }else
@@ -111,192 +171,222 @@ public class Server {
                 String[] inputs = input.split("[;,]");
                 boolean finish_trans = false;
                 Long time = Long.parseLong(inputs[inputs.length - 1]);
-                System.out.println("Received request from " + request.getAddress() + " on " + time);
-                if (inputs[0].equals("hello")){                  
-                    System.out.println("new client connected, ip:" + request.getAddress().toString());
-                    message = features_mes;
-                    if(!clients.containsKey(request.getAddress())){
-                        clients.put(request.getAddress(), Long.parseLong(inputs[inputs.length - 1]));
+                System.out.println("Received request from " + request.getAddress() + " on " + time + "mes: " + input);
+                Identity iden = new Identity(request.getAddress(),request.getPort());
+                try{
+                    if(at_most_one)
+                        if (time.equals(clients.get(iden)))
+                            throw new Exception("Duplicate request");
+
+                    if (inputs[0].equals("hello")){                  
+                        System.out.println("new client connected, ip:" + request.getAddress().toString());
+                        message = features_mes;                   
+                        if(!clients.containsKey(iden)){                      
+                            clients.put(iden, Long.parseLong(inputs[inputs.length - 1]));
+                        }
+                        else{
+                            clients.remove(iden);
+                            clients.put(iden, Long.parseLong(inputs[inputs.length - 1]));
+                        }
+                    } else if (inputs[0].equals("ACK")){
+                        System.out.println("received ack");
+                        if (monitor_timers.containsKey(iden)){
+                            System.out.println("remove timer");
+                            GeneralTimer ti = monitor_timers.get(iden);
+                            ti.endAck();
+                            monitor_timers.remove(iden);
+                            finish_trans = true;
+                            message = "";
+                        }
+                        else{
+                            message = "Wrong input";
+                            finish_trans = true;
+                        }
                     }
                     else{
-                        clients.remove(request.getAddress());
-                        clients.put(request.getAddress(), Long.parseLong(inputs[inputs.length - 1]));
-                    }
-                }else{
-                    //handle requests                   
-                    int client_choice = 0;
-                    try{
-                        client_choice = Integer.parseInt(inputs[0]);
-                        
-                        
-                        //check duplicate
-                        if(at_most_one)
-                            if (time.equals(clients.get(request.getAddress())))
-                                throw new Exception("Duplicate request");
-                        switch(client_choice){
-                            case 1:
-                                finish_trans = true;
-                                try{
-                                    if (inputs.length != 6)
-                                        throw new Exception("Invalid parameters");
-                                    String name = inputs[1];
-                                    String password = inputs[2];
-                                    if (password.length() != 8)
-                                        throw new Exception("Password Length must be 8");
+                        //handle requests                   
+                        int client_choice = 0;
+                        try{
+                            client_choice = Integer.parseInt(inputs[0]);
 
-                                    boolean match = false;
-                                    for(Currency e : Currency.values()){
-                                        if (e.name().equals(inputs[3]))
-                                            match = true;
-                                    }
-                                    if (!match)
-                                        throw new Exception("Invalid currency type");
-                                    Currency type = Currency.valueOf(inputs[3]);
+                            //check duplicate
 
-
-                                    float balance = Float.parseFloat(inputs[4]);
-                                    if (balance < 0)
-                                        throw new Exception("Negative balance");
-
-                                    message = create_account(name,password,type,balance);
-                                }catch(Exception e){
-                                    message = "Error: Wrong request " + e.getMessage();
-                                }
-                                break;
-                            case 2:
-                                finish_trans = true;
-                                try{
-                                    if (inputs.length != 5)
-                                        throw new Exception("Invalid parameters");
-                                    String name = inputs[1];
-                                    String password = inputs[2];                            
-                                    int account_number = Integer.parseInt(inputs[3]);
-                                    message = close_account(name,password,account_number);
-                                }catch(Exception e){
-                                    message = "Error: Wrong request " + e.getMessage();
-                                }
-                                break;
-                            case 3:
-                                finish_trans = true;
-                                try{
-                                    if (inputs.length != 7)
-                                        throw new Exception("Invalid parameters");
-                                    int acc_no = Integer.parseInt(inputs[1]);
-                                    String name = inputs[2];
-                                    String password = inputs[3];                               
-                                    boolean match = false;
-                                    for(Currency e : Currency.values()){
-                                        if (e.name().equals(inputs[4]))
-                                            match = true;
-                                    }
-                                    if (!match)
-                                        throw new Exception("Invalid currency type");
-                                    Currency type = Currency.valueOf(inputs[4]);                                                            
-                                    float amount = Float.parseFloat(inputs[5]); 
-
-                                    message = deposit(acc_no,name,password,type,amount);
-                                }catch(Exception e){
-                                    message = "Error: Wrong request " + e.getMessage();
-                                }
-                                break;
-                            case 4:
-                                finish_trans = true;
-                                try{
-                                    if (inputs.length != 7)
-                                        throw new Exception("Invalid parameters");
-                                    int acc_no = Integer.parseInt(inputs[1]);
-                                    String name = inputs[2];
-                                    String password = inputs[3];                               
-                                    boolean match = false;
-                                    for(Currency e : Currency.values()){
-                                        if (e.name().equals(inputs[4]))
-                                            match = true;
-                                    }
-                                    if (!match)
-                                        throw new Exception("Invalid currency type");
-                                    Currency type = Currency.valueOf(inputs[4]);                                                            
-                                    float amount = Float.parseFloat(inputs[5]); 
-
-                                    message = withdraw(acc_no,name,password,type,amount);
-                                }catch(Exception e){
-                                    message = "Error: Wrong request " + e.getMessage();
-                                }
-                                break;
-                            case 5:
-                                finish_trans = true;
-                                try{
-                                    if (inputs.length != 9)
-                                        throw new Exception("Invalid parameters");
-                                    int acc_no1 = Integer.parseInt(inputs[1]);
-                                    String name1 = inputs[2];
-                                    String password1 = inputs[3];                               
-                                    boolean match = false;
-                                    for(Currency e : Currency.values()){
-                                        if (e.name().equals(inputs[4]))
-                                            match = true;
-                                    }
-                                    if (!match)
-                                        throw new Exception("Invalid currency type");
-                                    Currency type = Currency.valueOf(inputs[4]); 
-                                    int acc_no2 = Integer.parseInt(inputs[5]);
-                                    String name2 = inputs[6];
-                                    float amount = Float.parseFloat(inputs[7]); 
-
-                                    message = transfer(acc_no1,name1,password1,type,acc_no2,name2,amount);
-                                }catch(Exception e){
-                                    message = "Error: Wrong request " + e.getMessage();
-                                }
-                                break;
-                            case 6:
-                                finish_trans = true;
-                                try{
-                                    if (inputs.length != 5)
-                                        throw new Exception("Invalid parameters");
-                                    int acc_no = Integer.parseInt(inputs[1]);
-                                    String name = inputs[2];
-                                    String password = inputs[3];                               
-
-                                    message = transactions(acc_no,name,password);
-                                }catch(Exception e){
-                                    message = "Error: Wrong request " + e.getMessage();
-                                }
-                                break;
-                            case 7:
-                                try{
-                                    if (inputs.length != 3)
-                                        throw new Exception("Invalid parameters");
-                                    int duration = Integer.parseInt(inputs[1]);                                                             
-                                    message = register_monitor(request.getAddress(),request.getPort(),duration);
-                                }catch(Exception e){
+                            switch(client_choice){
+                                case 1:
                                     finish_trans = true;
-                                    message = "Error: Wrong request " + e.getMessage();
-                                }
-                                break;
-                        }
-                    }catch(NumberFormatException e){
-                        message = "Error: Wrong function selection";
-                    }catch(Exception e){
-                        System.out.println(e);
-                        message = last_mes.get(request.getAddress());
-                        finish_trans = false;
-                    }
-                }
-                //return reply to user
-                if(finish_trans){
-                    message = message + features_mes;
-                }
-                last_mes.remove(request.getAddress());
-                last_mes.put(request.getAddress(), message);
+                                    try{
+                                        if (inputs.length != 6)
+                                            throw new Exception("Invalid parameters");
+                                        String name = inputs[1];
+                                        String password = inputs[2];
+                                        if (password.length() != 8)
+                                            throw new Exception("Password Length must be 8");
 
-                clients.remove(request.getAddress());
-                clients.put(request.getAddress(),time);
- 
-                DatagramPacket reply = new DatagramPacket(message.getBytes(),message.length(),request.getAddress(),request.getPort());
-                int ran=(int)(Math.random()*10);
-                if (ran > 2 ) {
-                    socket.send(reply);
-                } else {
-                    System.out.println("Reply lost!");
+                                        boolean match = false;
+                                        for(Currency e : Currency.values()){
+                                            if (e.name().equals(inputs[3]))
+                                                match = true;
+                                        }
+                                        if (!match)
+                                            throw new Exception("Invalid currency type");
+                                        Currency type = Currency.valueOf(inputs[3]);
+
+
+                                        float balance = Float.parseFloat(inputs[4]);
+                                        if (balance < 0)
+                                            throw new Exception("Negative balance");
+
+                                        message = create_account(name,password,type,balance);
+                                    }catch(Exception e){
+                                        message = "Error: Wrong request " + e.getMessage();
+                                    }
+                                    break;
+                                case 2:
+                                    finish_trans = true;
+                                    try{
+                                        if (inputs.length != 5)
+                                            throw new Exception("Invalid parameters");
+                                        String name = inputs[1];
+                                        String password = inputs[2];                            
+                                        int account_number = Integer.parseInt(inputs[3]);
+                                        message = close_account(name,password,account_number);
+                                    }catch(Exception e){
+                                        message = "Error: Wrong request " + e.getMessage();
+                                    }
+                                    break;
+                                case 3:
+                                    finish_trans = true;
+                                    try{
+                                        if (inputs.length != 7)
+                                            throw new Exception("Invalid parameters");
+                                        int acc_no = Integer.parseInt(inputs[1]);
+                                        String name = inputs[2];
+                                        String password = inputs[3];                               
+                                        boolean match = false;
+                                        for(Currency e : Currency.values()){
+                                            if (e.name().equals(inputs[4]))
+                                                match = true;
+                                        }
+                                        if (!match)
+                                            throw new Exception("Invalid currency type");
+                                        Currency type = Currency.valueOf(inputs[4]);                                                            
+                                        float amount = Float.parseFloat(inputs[5]); 
+
+                                        message = deposit(acc_no,name,password,type,amount);
+                                    }catch(Exception e){
+                                        message = "Error: Wrong request " + e.getMessage();
+                                    }
+                                    break;
+                                case 4:
+                                    finish_trans = true;
+                                    try{
+                                        if (inputs.length != 7)
+                                            throw new Exception("Invalid parameters");
+                                        int acc_no = Integer.parseInt(inputs[1]);
+                                        String name = inputs[2];
+                                        String password = inputs[3];                               
+                                        boolean match = false;
+                                        for(Currency e : Currency.values()){
+                                            if (e.name().equals(inputs[4]))
+                                                match = true;
+                                        }
+                                        if (!match)
+                                            throw new Exception("Invalid currency type");
+                                        Currency type = Currency.valueOf(inputs[4]);                                                            
+                                        float amount = Float.parseFloat(inputs[5]); 
+
+                                        message = withdraw(acc_no,name,password,type,amount);
+                                    }catch(Exception e){
+                                        message = "Error: Wrong request " + e.getMessage();
+                                    }
+                                    break;
+                                case 5:
+                                    finish_trans = true;
+                                    try{
+                                        if (inputs.length != 9)
+                                            throw new Exception("Invalid parameters");
+                                        int acc_no1 = Integer.parseInt(inputs[1]);
+                                        String name1 = inputs[2];
+                                        String password1 = inputs[3];                               
+                                        boolean match = false;
+                                        for(Currency e : Currency.values()){
+                                            if (e.name().equals(inputs[4]))
+                                                match = true;
+                                        }
+                                        if (!match)
+                                            throw new Exception("Invalid currency type");
+                                        Currency type = Currency.valueOf(inputs[4]); 
+                                        int acc_no2 = Integer.parseInt(inputs[5]);
+                                        String name2 = inputs[6];
+                                        float amount = Float.parseFloat(inputs[7]); 
+
+                                        message = transfer(acc_no1,name1,password1,type,acc_no2,name2,amount);
+                                    }catch(Exception e){
+                                        message = "Error: Wrong request " + e.getMessage();
+                                    }
+                                    break;
+                                case 6:
+                                    finish_trans = true;
+                                    try{
+                                        if (inputs.length != 5)
+                                            throw new Exception("Invalid parameters");
+                                        int acc_no = Integer.parseInt(inputs[1]);
+                                        String name = inputs[2];
+                                        String password = inputs[3];                               
+
+                                        message = transactions(acc_no,name,password);
+                                    }catch(Exception e){
+                                        message = "Error: Wrong request " + e.getMessage();
+                                    }
+                                    break;
+                                case 7:
+                                    try{
+                                        if (inputs.length != 3)
+                                            throw new Exception("Invalid parameters");
+                                        int duration = Integer.parseInt(inputs[1]);                                                             
+                                        message = register_monitor(request.getAddress(),request.getPort(),duration);
+                                    }catch(Exception e){
+                                        finish_trans = true;
+                                        message = "Error: Wrong request " + e.getMessage();
+                                    }
+                                    break;
+                                case 8:
+                                    message = "bye";
+                                    clients.remove(iden);
+                                    last_mes.remove(iden);
+                                    System.out.println("Client disconnected ip:" + iden.get_address().toString());
+                                    break;
+                            }
+                        }catch(NumberFormatException e){
+                            message = "Error: Wrong function selection";
+                        }
+                    }
+                    //return reply to user
+                    if(finish_trans){
+                        message = message + features_mes;
+                    }
+                    last_mes.remove(iden);
+                    last_mes.put(iden, message);
+
+                    clients.remove(iden);
+                    clients.put(iden,time);
+
+                    DatagramPacket reply = new DatagramPacket(message.getBytes(),message.length(),request.getAddress(),request.getPort());
+
+                    send_rep(iden,message);
+                }catch(Exception e){
+                    System.out.println(e);
+                    message = last_mes.get(iden);
+                    finish_trans = false;   
+                    last_mes.remove(iden);
+                    last_mes.put(iden, message);
+
+                    clients.remove(iden);
+                    clients.put(iden,time);
+
+                    DatagramPacket reply = new DatagramPacket(message.getBytes(),message.length(),request.getAddress(),request.getPort());
+
+                    send_rep(iden,message);
                 }
             }
         }catch(SocketException e){
@@ -524,10 +614,10 @@ public class Server {
             int end = (int) (date.getTime() + duration * 1000);
             Date end_date = new Date(end);
             monitorings.put(monitor, end_date);
+            GeneralTimer gTimer = new GeneralTimer(duration, monitor);
+            gTimer.startTimer();
+            monitor_timers.put(monitor, gTimer);
         }
-        
-        GeneralTimer gTimer = new GeneralTimer(duration, monitor);
-        gTimer.startTimer();
         //tiempo.setRepeats(false);
         //tiempo.start();
         
@@ -542,23 +632,10 @@ public class Server {
             Identity monitor = iterator.next();
             Date date = new Date();
             String rep_mes;
-            boolean log_out = false;
-            if (monitorings.get(monitor).getTime() >= date.getTime()){
-                log_out = true;             
-                rep_mes = "Finish monitoring\n" + features_mes;
-            }
-            else{
-                rep_mes = message;
-            }
-            DatagramPacket reply = new DatagramPacket(rep_mes.getBytes(),rep_mes.length(),monitor.get_address(),monitor.get_port());
-            try{
-                socket.send(reply);
-            }catch(Exception e){
-                System.out.println(e);
-            }
-            if(log_out){
-                iterator.remove();
-            }
+
+            rep_mes = message;
+            
+            send_rep(monitor,rep_mes);
         }
     }
 }

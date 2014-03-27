@@ -9,6 +9,7 @@ package bankingsystem;
 import java.net.*;
 import java.io.*;
 import java.util.*;
+
 /**
  *
  * @author Quan Hoang
@@ -23,11 +24,12 @@ public class Client {
              */
             socket = new DatagramSocket();    
             Date date = new Date();
-            String init = "hello;" + date.getTime();
+            java.nio.ByteOrder order = java.nio.ByteOrder.nativeOrder();
+            String init = "hello;" +order.toString() +";"+ date.getTime();
             byte[] m = init.getBytes();
             InetAddress host;
             if (args.length < 1)
-                host = InetAddress.getByName("172.21.144.97");
+                host = InetAddress.getByName("localhost");
             else
                 host = InetAddress.getByName(args[0]);
             int serverPort = 2222;
@@ -49,16 +51,24 @@ public class Client {
                 DatagramPacket reply = new DatagramPacket(buffer,buffer.length);
                 try{ // reply message arrive
                     socket.receive(reply);
+                    Date d = new Date();
                     if((new String(reply.getData(),reply.getOffset(),reply.getLength())).equals("bye"))
                         return;
                     if((new String(reply.getData(),reply.getOffset(),reply.getLength())).equals("Start monitoring"))
                         monitoring = true;
-                    if((new String(reply.getData(),reply.getOffset(),reply.getLength())).equals("Finish monitoring"))
+                    if((new String(reply.getData(),reply.getOffset(),reply.getLength())).equals("Finish monitoring")){
                         monitoring = false;
+                        System.out.println(new String(reply.getData()));
+                        String ack = "ACK;" + d.getTime();
+                        System.out.println("Sending 1: "+ack);
+                        request = new DatagramPacket(ack.getBytes(),ack.length(),host,serverPort);
+                        socket.send(request);
+                        continue;
+                    }
                     System.out.println(new String(reply.getData()));
-                    if(!monitoring){
-                        Date d = new Date();
+                    if(!monitoring){                       
                         String selection = scanner.nextLine() + ";" + d.getTime();
+                        System.out.println("Sending 2: "+selection);
                         request = new DatagramPacket(selection.getBytes(),selection.length(),host,serverPort);
                         socket.send(request);
                     }
