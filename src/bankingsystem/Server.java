@@ -419,12 +419,13 @@ public class Server {
         int acc_no = account.get_account_number();
         bank.put(acc_no, account);
         String result = Integer.toString(acc_no);
-        System.out.println("\ncreate new account:"
+        String message = "\ncreate new account:"
                 + "\nnumber: " + acc_no
                 + "\nname: " + name
-                + "\npassword: " + password
                 + "\ntype: " + type.name()
-                + "\nbalance: " + balance);
+                + "\nbalance: " + balance;
+        inform_monitors(message);
+        System.out.println(message + "\npassword: " + password);
         return result;
     }
     
@@ -444,10 +445,12 @@ public class Server {
             return "Password incorrect";
         if (!account.get_name().equals(name))
             return "Account name is not matched";
-        System.out.println("\nclose account:"
+        String output="\nclose account:"
                 + "\nnumber: " + account_number
-                + "\nname: " + name
-                + "\npassword: " + password);
+                + "\nname: " + name;
+        inform_monitors(output);        
+        System.out.println(output+"\npassword: " + password);
+                
         return "Sucessfully close your account";
     }
     
@@ -480,10 +483,9 @@ public class Server {
         String output ="\nupdate balance"
                 + "\nnumber: " + account_number
                 + "\nname: " + name
-                + "\npassword: " + password
                 + "\nold balance: " + (account.get_balance() - amount)
                 + "\nnew balance: " + account.get_balance();
-        System.out.println(output);
+        System.out.println(output + "\npassword: " + password);
         Date date = new Date();
         account.add_event(amount, new Timestamp(date.getTime()));
         inform_monitors(output);
@@ -516,12 +518,13 @@ public class Server {
         if (amount > account.get_balance())
             return "Not enough balance";
         account.set_balance(account.get_balance() - amount);
-        System.out.println("\nupdate balance"
+        String output="\nupdate balance"
                 + "\nnumber: " + account_number
                 + "\nname: " + name
-                + "\npassword: " + password
                 + "\nold balance: " + (account.get_balance() + amount)
-                + "\nnew balance: " + account.get_balance());
+                + "\nnew balance: " + account.get_balance();
+        inform_monitors(output);
+        System.out.println(output+ "\npassword: " + password);
         Date date = new Date();
         account.add_event(-amount, new Timestamp(date.getTime()));
         return Float.toString(account.get_balance());
@@ -562,7 +565,7 @@ public class Server {
             return "Not enough balance";
         account1.set_balance(account1.get_balance() - amount);
         account2.set_balance(account2.get_balance() + amount);
-        System.out.println("\ntransfer"
+        String output="\ntransfer"
                 + "\nnumber: " + account_number1
                 + "\nname: " + name1
                 + "\npassword: " + password
@@ -571,7 +574,10 @@ public class Server {
                 + "\n to number: " + account_number2
                 + "\n name: " + name2
                 + "\nold balance: " + (account2.get_balance() - amount)
-                + "\nnew balance: " + account2.get_balance());
+                + "\nnew balance: " + account2.get_balance();
+        inform_monitors(output);
+        System.out.println(output+ "\npassword: " + password);
+                
         Date date = new Date();
         account1.add_event(-amount, new Timestamp(date.getTime()));
         account2.add_event(amount, new Timestamp(date.getTime()));
@@ -594,10 +600,11 @@ public class Server {
             return "Password incorrect";
         if (!account.get_name().equals(name))
             return "Account name is not matched";
-        System.out.println("\ncheck transaction"
+        String output = "\ncheck transaction"
                 + "\nnumber: " + account_number
-                + "\nname: " + name
-                + "\npassword: " + password);
+                + "\nname: " + name;
+        inform_monitors(output);
+        System.out.println(output+ "\npassword: " + password);
         return account.get_events();
     }
     
@@ -631,11 +638,8 @@ public class Server {
         Iterator<Identity> iterator = monitorings.keySet().iterator();
         while(iterator.hasNext()){
             Identity monitor = iterator.next();
-            Date date = new Date();
             String rep_mes;
-
             rep_mes = message;
-            
             send_rep(monitor,rep_mes);
         }
     }
