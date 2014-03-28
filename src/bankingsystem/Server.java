@@ -12,6 +12,8 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.net.*;
 import java.io.*;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.*;
 import java.sql.Timestamp;
 /**
@@ -19,7 +21,7 @@ import java.sql.Timestamp;
  * @author Quan Hoang
  */
 public class Server {
-    private static String features_mes = "\nSelect one of the following options along with its parameters: \n"
+    private static final String features_mes = "\nSelect one of the following options along with its parameters: \n"
                             + "1. Create new account\n" + "\t" + create_account()
                             + "\n2. Close an existing account\n" + "\t" + close_account()
                             + "\n3. Deposit\n" + "\t" + deposit()
@@ -35,12 +37,10 @@ public class Server {
     private static HashMap<Identity,Date> monitorings;
     private static HashMap<Identity,GeneralTimer> monitor_timers;
     private static boolean at_most_one;
-    private static boolean same_endian;
     
     private static class GeneralTimer{
         private Timer timer;
         private Timer ackTimer;
-        private InetAddress add;
         
         public GeneralTimer(int duration, Identity monitor){
             final Identity tmpMonitor = monitor;
@@ -85,8 +85,8 @@ public class Server {
     }
     
     private static class Identity{
-        private InetAddress address;
-        private int port;
+        private final InetAddress address;
+        private final int port;
         
         public Identity(InetAddress address,int port){
             this.address = address;
@@ -127,14 +127,32 @@ public class Server {
         }
     }
     
+     private static byte[] marshall(String s){
+        byte[] m = s.getBytes();          
+        ByteBuffer buf = ByteBuffer.wrap(m);
+        buf.order(ByteOrder.BIG_ENDIAN);
+        byte[] n = new byte[buf.remaining()];
+        buf.get(n);
+        return n;
+    }
+    
+    private static String unMarshall(byte[] m, int offset, int length){
+        ByteBuffer buf = ByteBuffer.wrap(m);
+        buf.order(ByteOrder.BIG_ENDIAN);
+        byte[] n = new byte[buf.remaining()];
+        buf.get(n);
+        return new String(n,offset,length);
+    }
+    
     public static boolean send_rep(Identity iden,String message){
         int ran=(int)(Math.random()*100);
         if (ran > 15)
             try{
-                socket.send(new DatagramPacket(message.getBytes(), message.length(),iden.get_address(), iden.get_port()));
+                byte[] m = marshall(message);
+                socket.send(new DatagramPacket(m, m.length,iden.get_address(), iden.get_port()));
                 return true;
             }
-            catch(Exception ex){
+            catch(IOException ex){
                 System.out.println(ex);
                 return false;
             }
@@ -151,12 +169,7 @@ public class Server {
         monitorings = new HashMap<>();
         last_mes = new HashMap<>();
         monitor_timers = new HashMap<>();
-        same_endian = false;
-        
-        if (args.length < 1){
-            at_most_one = true;
-        }else
-            at_most_one = false;
+        at_most_one = args.length < 1;
         
         try{
             System.out.println("Start server");
@@ -168,7 +181,7 @@ public class Server {
                 socket.receive(request);
                      
                 String message = null;
-                String input = new String(request.getData(),request.getOffset(),request.getLength());
+                String input = unMarshall(request.getData(),request.getOffset(),request.getLength());
                 String[] inputs = input.split("[;,]");
                 boolean finish_trans = false;
                 Long time = Long.parseLong(inputs[inputs.length - 1]);
@@ -188,6 +201,9 @@ public class Server {
                         else{
                             clients.remove(iden);
                             clients.put(iden, Long.parseLong(inputs[inputs.length - 1]));
+                            monitorings.remove(iden);
+                            monitor_timers.remove(iden);
+                            last_mes.remove(iden);
                         }
                     } else if (inputs[0].equals("ACK")){
                         System.out.println("received ack");
@@ -205,11 +221,9 @@ public class Server {
                         }
                     }
                     else{
-                        //handle requests                   
-                        int client_choice = 0;
+                        //handle requests                                         
                         try{
-                            client_choice = Integer.parseInt(inputs[0]);
-
+                            int client_choice = Integer.parseInt(inputs[0]);
                             //check duplicate
 
                             switch(client_choice){
