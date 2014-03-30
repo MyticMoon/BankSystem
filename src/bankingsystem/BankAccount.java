@@ -19,7 +19,7 @@ public class BankAccount{
     private String password = new String(new char[8]);
     Currency type;
     private float balance;
-    private ArrayList<Transaction> transactions;
+    private ArrayList<Transaction> transactions; // stores all transaction(deposit and withdraw from this account
     
     private BankAccount(){
     }

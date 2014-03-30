@@ -19,6 +19,9 @@ public class Client {
     
     private static DatagramSocket socket;   
     
+    /**
+     *marshalling, convert String into byte array
+     */
     private static byte[] marshall(String s){
         byte[] m = s.getBytes();          
         ByteBuffer buf = ByteBuffer.wrap(m);
@@ -28,6 +31,9 @@ public class Client {
         return n;
     }
     
+    /**
+     * unmarshalling, take data from byte array
+     */
     private static String unMarshall(byte[] m, int offset, int length){
         ByteBuffer buf = ByteBuffer.wrap(m);
         buf.order(ByteOrder.BIG_ENDIAN);
@@ -36,6 +42,7 @@ public class Client {
         return new String(n,offset,length);
     }
     
+    // send message through a socket, use random function to simulate loss
     private static void send(InetAddress host, int port, DatagramPacket request){
         try{
             int ran=(int)(Math.random()*100);
@@ -56,7 +63,8 @@ public class Client {
              */
             socket = new DatagramSocket();    
             InetAddress host;
-                               
+            
+            //default server is at localhost
             if (args.length < 1)
                 host = InetAddress.getByName("localhost");
             else
@@ -64,6 +72,7 @@ public class Client {
             int serverPort = 2222;
             
             Date date = new Date();
+            //request message = message + time created
             String init = "hello;" + date.getTime();
             
             /**
@@ -80,6 +89,7 @@ public class Client {
             //recieve reply     
             boolean monitoring = false;
             while(true){
+                //set timeout to handle reply lost
                 if(monitoring)
                     socket.setSoTimeout(0);
                 else
@@ -90,11 +100,16 @@ public class Client {
                     socket.receive(reply);
                     Date d = new Date();
                     String rep = unMarshall(reply.getData(),reply.getOffset(),reply.getLength());
+                    //"bye" = close connection
+                    //"Start monitoring" = has ben registered to monitor list in server
+                    //"Finish monitoring" = monitorin period is ended
                     if(rep.equals("bye"))
                         return;
                     if(rep.equals("Start monitoring"))
                         monitoring = true;
                     if(rep.equals("Finish monitoring")){
+                        //if the monitor duration ends, send ack to server to
+                        //be served
                         monitoring = false;
                         System.out.println(new String(reply.getData()));
                         String ack = "ACK;" + d.getTime();
@@ -105,7 +120,9 @@ public class Client {
                         continue;
                     }
                     System.out.println(new String(reply.getData()));
-                    if(!monitoring){                       
+                    if(!monitoring){             
+                        //print the reply from server
+                        //get input from user and send to server
                         String selection = scanner.nextLine() + ";" + d.getTime();
                         System.out.println("Sending 2: "+selection);
                         byte[] m = marshall(selection);
@@ -113,11 +130,13 @@ public class Client {
                         send(host,serverPort,request);
                     }
                 }catch(SocketTimeoutException e){
+                    //reply not received, resent request 
                     System.out.println(e);
                     System.out.println("Request resent!");
                     send(host,serverPort,request);
                 }
             }
+        //handle error
         }catch(ConnectException e){
             System.out.println("Error: " + e.toString());
         }catch(SocketException e){

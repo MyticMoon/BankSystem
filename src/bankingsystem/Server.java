@@ -21,6 +21,7 @@ import java.sql.Timestamp;
  * @author Quan Hoang
  */
 public class Server {
+    // server's functions
     private static final String features_mes = "\nSelect one of the following options along with its parameters: \n"
                             + "1. Create new account\n" + "\t" + create_account()
                             + "\n2. Close an existing account\n" + "\t" + close_account()
@@ -30,17 +31,18 @@ public class Server {
                             + "\n6. Check recent transactions\n" + "\t" + transactions()
                             + "\n7. Monitor all account\n" + "\t" + monitor()
                             + "\n8. Close connection";
-    private static HashMap<Identity,Long> clients;
-    private static HashMap<Identity,String> last_mes;
-    private static HashMap<Integer,BankAccount> bank;
+    private static HashMap<Identity,Long> clients; //all clients are stored here
+    private static HashMap<Identity,String> last_mes;// clients' last reply 
+    private static HashMap<Integer,BankAccount> bank;// all bank accounts
     private static DatagramSocket socket;
-    private static HashMap<Identity,Date> monitorings;
-    private static HashMap<Identity,GeneralTimer> monitor_timers;
-    private static boolean at_most_one;
+    private static HashMap<Identity,Date> monitorings;// all monitors
+    private static HashMap<Identity,GeneralTimer> monitor_timers;// monitors' timer and ack timer
+    private static boolean at_most_one; // true = server running in at most one mode
     
+    //Timer class
     private static class GeneralTimer{
-        private Timer timer;
-        private Timer ackTimer;
+        private Timer timer; //timer for monitoring duration
+        private Timer ackTimer; //timer for acknowledgement message
         
         public GeneralTimer(int duration, Identity monitor){
             final Identity tmpMonitor = monitor;
@@ -84,6 +86,7 @@ public class Server {
         }
     }
     
+    //identity class for each client
     private static class Identity{
         private final InetAddress address;
         private final int port;
@@ -126,7 +129,9 @@ public class Server {
             return rhs.get_address().equals(address) && rhs.get_port() == port;
         }
     }
-    
+    /**
+     * marshalling and unmarshalling
+     */
      private static byte[] marshall(String s){
         byte[] m = s.getBytes();          
         ByteBuffer buf = ByteBuffer.wrap(m);
@@ -144,6 +149,7 @@ public class Server {
         return new String(n,offset,length);
     }
     
+    //send message to client
     public static boolean send_rep(Identity iden,String message){
         int ran=(int)(Math.random()*100);
         if (ran > 15)
@@ -177,21 +183,25 @@ public class Server {
             byte[] buffer = new byte[1000];
             
             while(true){
+                //wait for request from client
                 DatagramPacket request = new DatagramPacket(buffer,buffer.length);
                 socket.receive(request);
                      
                 String message = null;
+                
+                //get the message
                 String input = unMarshall(request.getData(),request.getOffset(),request.getLength());
                 String[] inputs = input.split("[;,]");
-                boolean finish_trans = false;
+                boolean finish_trans = false;                             
                 Long time = Long.parseLong(inputs[inputs.length - 1]);
                 System.out.println("Received request from " + request.getAddress() + " on " + time + "mes: " + input);
                 Identity iden = new Identity(request.getAddress(),request.getPort());
+                
                 try{
                     if(at_most_one)
                         if (time.equals(clients.get(iden)))
                             throw new Exception("Duplicate request");
-
+                    //new client connected, register it
                     if (inputs[0].equals("hello")){                  
                         System.out.println("new client connected, ip:" + request.getAddress().toString());
                         message = features_mes;                   
@@ -205,8 +215,11 @@ public class Server {
                             monitor_timers.remove(iden);
                             last_mes.remove(iden);
                         }
-                    } else if (inputs[0].equals("ACK")){
+                    } 
+                    //acknowledgement from client(when finish monitoring)
+                    else if (inputs[0].equals("ACK")){
                         System.out.println("received ack");
+                        //clear all the timer and server the client as normal
                         if (monitor_timers.containsKey(iden)){
                             System.out.println("remove timer");
                             GeneralTimer ti = monitor_timers.get(iden);
@@ -220,6 +233,7 @@ public class Server {
                             finish_trans = true;
                         }
                     }
+                    //perform other requests
                     else{
                         //handle requests                                         
                         try{
@@ -227,9 +241,10 @@ public class Server {
                             //check duplicate
 
                             switch(client_choice){
-                                case 1:
+                                case 1: //open account
                                     finish_trans = true;
                                     try{
+                                        //check message validity
                                         if (inputs.length != 6)
                                             throw new Exception("Invalid parameters");
                                         String name = inputs[1];
@@ -250,15 +265,16 @@ public class Server {
                                         float balance = Float.parseFloat(inputs[4]);
                                         if (balance < 0)
                                             throw new Exception("Negative balance");
-
+                                        
                                         message = create_account(name,password,type,balance);
                                     }catch(Exception e){
                                         message = "Error: Wrong request " + e.getMessage();
                                     }
                                     break;
-                                case 2:
+                                case 2: //close account
                                     finish_trans = true;
                                     try{
+                                        //check message validity
                                         if (inputs.length != 5)
                                             throw new Exception("Invalid parameters");
                                         String name = inputs[1];
@@ -269,9 +285,10 @@ public class Server {
                                         message = "Error: Wrong request " + e.getMessage();
                                     }
                                     break;
-                                case 3:
+                                case 3://deposit
                                     finish_trans = true;
                                     try{
+                                        //check message validity
                                         if (inputs.length != 7)
                                             throw new Exception("Invalid parameters");
                                         int acc_no = Integer.parseInt(inputs[1]);
@@ -292,9 +309,10 @@ public class Server {
                                         message = "Error: Wrong request " + e.getMessage();
                                     }
                                     break;
-                                case 4:
+                                case 4: //withdraw
                                     finish_trans = true;
                                     try{
+                                        //check message validity
                                         if (inputs.length != 7)
                                             throw new Exception("Invalid parameters");
                                         int acc_no = Integer.parseInt(inputs[1]);
@@ -315,9 +333,10 @@ public class Server {
                                         message = "Error: Wrong request " + e.getMessage();
                                     }
                                     break;
-                                case 5:
+                                case 5://transfer money
                                     finish_trans = true;
                                     try{
+                                        //check message validity
                                         if (inputs.length != 9)
                                             throw new Exception("Invalid parameters");
                                         int acc_no1 = Integer.parseInt(inputs[1]);
@@ -340,9 +359,10 @@ public class Server {
                                         message = "Error: Wrong request " + e.getMessage();
                                     }
                                     break;
-                                case 6:
+                                case 6://print all transactions
                                     finish_trans = true;
                                     try{
+                                        //check message validity
                                         if (inputs.length != 5)
                                             throw new Exception("Invalid parameters");
                                         int acc_no = Integer.parseInt(inputs[1]);
@@ -354,8 +374,9 @@ public class Server {
                                         message = "Error: Wrong request " + e.getMessage();
                                     }
                                     break;
-                                case 7:
+                                case 7://register to be monitor
                                     try{
+                                        //check message validity
                                         if (inputs.length != 3)
                                             throw new Exception("Invalid parameters");
                                         int duration = Integer.parseInt(inputs[1]);                                                             
@@ -365,7 +386,7 @@ public class Server {
                                         message = "Error: Wrong request " + e.getMessage();
                                     }
                                     break;
-                                case 8:
+                                case 8://close connection
                                     message = "bye";
                                     clients.remove(iden);
                                     last_mes.remove(iden);
@@ -380,16 +401,19 @@ public class Server {
                     if(finish_trans){
                         message = message + features_mes;
                     }
+                    //update records
                     last_mes.remove(iden);
                     last_mes.put(iden, message);
 
                     clients.remove(iden);
                     clients.put(iden,time);
 
+                    //send the message back to client
                     DatagramPacket reply = new DatagramPacket(message.getBytes(),message.length(),request.getAddress(),request.getPort());
-
+                    
                     send_rep(iden,message);
                 }catch(Exception e){
+                    //if duplicate message found
                     System.out.println(e);
                     message = last_mes.get(iden);
                     finish_trans = false;   
